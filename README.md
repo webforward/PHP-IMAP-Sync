@@ -18,4 +18,4 @@ Dont forget to change the details.
 
 Special thanks to David Busby - edoceo, their script worked well, but not well enough for what we wanted to do!
 
-    <a href="https://github.com/edoceo/imap-move">https://github.com/edoceo/imap-move</a>
+    https://github.com/edoceo/imap-move(https://github.com/edoceo/imap-move)
