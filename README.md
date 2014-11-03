@@ -16,6 +16,6 @@ Dont forget to change the details.
 
 ## Credits
 
-Special thanks to edoceo, their script worked well, but not well enough for what we wanted to do!
+Special thanks to David Busby - edoceo, their script worked well, but not well enough for what we wanted to do!
 
-    https://github.com/edoceo/imap-move
+    <a href="https://github.com/edoceo/imap-move">https://github.com/edoceo/imap-move</a>
