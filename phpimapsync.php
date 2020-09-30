@@ -55,7 +55,7 @@ if (is_array($s_folders)) {
 
             if (preg_match('/}(.+)$/',$s_folder['name'],$m)) {
                 $s_folder = str_replace('INBOX/',null,$m[1]);
-                $t_folder = implode('.', array($t_prefix, $s_folder));
+                $t_folder = "$t_prefix$s_folder";
             }
 
             echo "Changing Folders - ({$s_folder}) ({$t_folder}) - {$s_folder_stats['mail_count']} messages\n";
