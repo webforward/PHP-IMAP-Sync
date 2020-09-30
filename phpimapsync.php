@@ -42,7 +42,7 @@ $summary = array(
 if (is_array($s_folders)) {
     foreach ($s_folders as $s_folder) {
 
-        if (mail_exclusions($s_folder['name'])) {
+        if (mail_exclusions($s_folder)) {
             echo 'Skipping '.$s_folder['name'].$NL;
             continue;
         }
