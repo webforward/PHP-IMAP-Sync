@@ -2,10 +2,12 @@
 class Configuration {
     protected bool $verbose = false;
     protected bool $test = false;
+    protected bool $listFolder = false;
     protected bool $wipe = false;
     protected string $source = '';
     protected string $target = '';
     protected string $memory = '';
+    protected array $mapFolder = [];
 
     public function __construct(int $argc, array $argv) {
         $this->parseArgs($argc, $argv);
@@ -19,6 +21,8 @@ class Configuration {
                 $this->verbose = true;
             } else if (in_array($argv[$i], ['--dry-run', '--test', '-t'])) {
                 $this->test = true;
+            } else if (in_array($argv[$i], ['--listFolder'])) {
+                $this->listFolder = true;
             } else if (in_array($argv[$i], ['--wipe', '-w'])) {
                 $this->wipe = true;
             } else if (in_array($argv[$i], ['--source', '-s'])) {
@@ -35,6 +39,20 @@ class Configuration {
                     exit(1);
                 }
                 $this->target = $argv[$i];
+            } else if (in_array($argv[$i], ['--mapFolder'])) {
+                $i++;
+                if (empty($argv[$i])) {
+                    echo 'You must specify a map folder value.' . PHP_EOL;
+                    exit(1);
+                }
+                $data = json_decode($argv[$i], true);
+                if (json_last_error()) {
+                    echo 'Folder mapping failed: ' . json_last_error_msg() . PHP_EOL;
+                    exit(1);
+                }
+                $this->mapFolder = $data;
+                $this->verbose = true;
+                $this->test = true;
             } else if (in_array($argv[$i], ['--memory', '-m'])) {
                 $i++;
                 if (empty($argv[$i])) {
@@ -68,6 +86,10 @@ class Configuration {
         return $this->test;
     }
 
+    public function isListFolder(): bool {
+        return $this->listFolder;
+    }
+
     public function isWipe(): bool {
         return $this->wipe;
     }
@@ -78,6 +100,10 @@ class Configuration {
 
     public function getTarget(): string {
         return $this->target;
+    }
+
+    public function getMapFolder(): array {
+        return $this->mapFolder;
     }
 
     public function getMemory(): string {

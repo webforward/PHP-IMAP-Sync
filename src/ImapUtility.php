@@ -15,7 +15,7 @@ class ImapUtility {
         $this->test = $isTest;
 
         $this->parseConfigUrl($url);
-        $this->connect($url);
+        $this->connect();
     }
 
     protected function parseConfigUrl(string $url) {
@@ -52,7 +52,7 @@ class ImapUtility {
         }
     }
 
-    protected function connect(string $url) {
+    protected function connect() {
         if ($this->verbose) {
             echo 'Connect to: ' . $this->host . PHP_EOL;
         }
@@ -259,7 +259,7 @@ class ImapUtility {
                 'Draft' => $mailHeader->Draft,
             ]));
             if ($this->verbose) {
-                echo '-> ' . str_pad($messageNumber, $length, ' ', STR_PAD_LEFT) . ': ' . $mailHeader->subject . PHP_EOL;
+                echo '-> ' . str_pad($messageNumber, $length, ' ', STR_PAD_LEFT) . ': ' . $this->decodeSubject($mailHeader->subject) . PHP_EOL;
             }
         }
         if ($this->verbose) {
@@ -280,7 +280,7 @@ class ImapUtility {
             if (isset($mailHeader->message_id) && !array_key_exists($mailHeader->message_id, $sourceMessages)) {
                 $removeMessages[] = $messageNumber;
                 if ($this->verbose) {
-                    echo '-> ' . str_pad($messageNumber, $length, ' ', STR_PAD_LEFT) . ': ' . $mailHeader->subject . PHP_EOL;
+                    echo '-> ' . str_pad($messageNumber, $length, ' ', STR_PAD_LEFT) . ': ' . $this->decodeSubject($mailHeader->subject) . PHP_EOL;
                 }
             }
         }
@@ -305,7 +305,7 @@ class ImapUtility {
             $mailHeader = $this->getHeader($messageNumber);
             $removeMessages[] = $messageNumber;
             if ($this->verbose) {
-                echo '-> ' . str_pad($messageNumber, $length, ' ', STR_PAD_LEFT) . ': ' . $mailHeader->subject . PHP_EOL;
+                echo '-> ' . str_pad($messageNumber, $length, ' ', STR_PAD_LEFT) . ': ' . $this->decodeSubject($mailHeader->subject) . PHP_EOL;
             }
         }
         if (!$this->test) {
@@ -328,6 +328,14 @@ class ImapUtility {
             }
         }
         return implode(' ', $mailOptions);
+    }
+
+    public function decodeSubject(string $value): string {
+        $subject = '';
+        foreach (imap_mime_header_decode($value) as $item) {
+            $subject .= $item->text;
+        }
+        return $subject;
     }
 
     /* @todo Maybe good for path mapping in Google; check domain [gmail.com|googlemail.com] or --map-google-source --map-google-target
