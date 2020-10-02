@@ -1,4 +1,5 @@
 <?php
+require_once('Server.php');
 require_once('Configuration.php');
 require_once('ImapUtility.php');
 
@@ -20,11 +21,13 @@ class ImapSync {
 
         echo 'Connecting Source...' . PHP_EOL;
         $this->imapSource = new ImapUtility($this->config->getSource(), $this->config->isVerbose(), $this->config->isTest());
+        // @todo This synchronize everything, server->path with subfolder is useless
         $this->imapSourceFolders = $this->imapSource->getFolders();
         $this->renderImapFolder($this->imapSource, $this->imapSourceFolders);
 
         echo 'Connecting Target...' . PHP_EOL;
         $this->imapTarget = new ImapUtility($this->config->getTarget(), $this->config->isVerbose(), $this->config->isTest());
+        // @todo This synchronize everything, server->path with subfolder is useless
         $this->imapTargetFolders = $this->imapTarget->getFolders();
         $this->renderImapFolder($this->imapTarget, $this->imapTargetFolders);
 
@@ -99,7 +102,10 @@ class ImapSync {
                     continue;
                 }
 
-                $this->imapSource->changeFolder($imapSourceFolder->name, false, 'source');
+                if (!$this->imapSource->changeFolder($imapSourceFolder->name, false, 'source')) {
+                    echo 'Can\'t change source folder: ' . $this->imapSource->getNameFromPath($imapSourceFolder->name) . PHP_EOL;
+                    exit(1);
+                }
 
                 $targetFolderPath = $this->imapSource->getNameFromPath($imapSourceFolder->name);
                 if ($targetFolderPath === '') {
@@ -111,7 +117,14 @@ class ImapSync {
                     echo 'Mapping folder ' . $this->imapSource->getNameFromPath($imapSourceFolder->name) . ' to ' . $targetFolderPath . PHP_EOL;
                 }
 
-                $this->imapTarget->changeFolder($targetFolderPath, true, 'target');
+                $targetChangeFolderResult = $this->imapTarget->changeFolder($targetFolderPath, true, 'target');
+                if ($this->config->isTest() && !$targetChangeFolderResult) {
+                    echo 'Can\'t change target folder: ' . $targetFolderPath . ' (Skipped in testing mode)' . PHP_EOL;
+                    continue;
+                } else if (!$targetChangeFolderResult) {
+                    echo 'Can\'t change target folder: ' . $targetFolderPath . PHP_EOL;
+                    exit(1);
+                }
 
                 echo 'Source: ' . $this->imapSource->getStats()->count .' messages | '
                     .'Target: ' . $this->imapTarget->getStats()->count .' messages'

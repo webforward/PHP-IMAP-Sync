@@ -4,13 +4,23 @@ class Configuration {
     protected bool $test = false;
     protected bool $listFolder = false;
     protected bool $wipe = false;
-    protected string $source = '';
-    protected string $target = '';
+    protected Server $source;
+    protected string $sourceUrl = '';
+    protected string $sourceUsername = '';
+    protected string $sourcePassword = '';
+    protected Server $target;
+    protected string $targetUrl = '';
+    protected string $targetUsername = '';
+    protected string $targetPassword = '';
     protected string $memory = '';
     protected array $mapFolder = [];
 
     public function __construct(int $argc, array $argv) {
+        $this->source = new Server();
+        $this->target = new Server();
         $this->parseArgs($argc, $argv);
+        $this->configureServer($this->source, $this->sourceUrl, $this->sourceUsername, $this->sourcePassword);
+        $this->configureServer($this->target, $this->targetUrl, $this->targetUsername, $this->targetPassword);
         $this->validate();
         return $this;
     }
@@ -31,14 +41,42 @@ class Configuration {
                     echo 'You must specify a source IMAP server.' . PHP_EOL;
                     exit(1);
                 }
-                $this->source = $argv[$i];
+                $this->sourceUrl = $argv[$i];
+            } else if (in_array($argv[$i], ['--sourceUsername'])) {
+                $i++;
+                if (empty($argv[$i])) {
+                    echo 'You must specify a source username.' . PHP_EOL;
+                    exit(1);
+                }
+                $this->sourceUsername = $argv[$i];
+            } else if (in_array($argv[$i], ['--sourcePassword'])) {
+                $i++;
+                if (empty($argv[$i])) {
+                    echo 'You must specify a source password.' . PHP_EOL;
+                    exit(1);
+                }
+                $this->sourcePassword = $argv[$i];
             } else if (in_array($argv[$i], ['--target', '-t'])) {
                 $i++;
                 if (empty($argv[$i])) {
                     echo 'You must specify a target IMAP server.' . PHP_EOL;
                     exit(1);
                 }
-                $this->target = $argv[$i];
+                $this->targetUrl = $argv[$i];
+            } else if (in_array($argv[$i], ['--targetUsername'])) {
+                $i++;
+                if (empty($argv[$i])) {
+                    echo 'You must specify a target username.' . PHP_EOL;
+                    exit(1);
+                }
+                $this->targetUsername = $argv[$i];
+            } else if (in_array($argv[$i], ['--targetPassword'])) {
+                $i++;
+                if (empty($argv[$i])) {
+                    echo 'You must specify a target password.' . PHP_EOL;
+                    exit(1);
+                }
+                $this->targetPassword = $argv[$i];
             } else if (in_array($argv[$i], ['--mapFolder'])) {
                 $i++;
                 if (empty($argv[$i])) {
@@ -64,12 +102,61 @@ class Configuration {
         }
     }
 
+    protected function configureServer(Server &$server, string $url, string $username, string $password) {
+        $url = trim($url);
+        $isJson = (strpos($url, '{') === 0);
+        if ($isJson) {
+            $jsonConfig = json_decode($url);
+            if (json_last_error()) {
+                echo 'Error converting json config: ' . json_last_error_msg() . PHP_EOL;
+                exit(1);
+            }
+            $url = isset($jsonConfig->url) ? $jsonConfig->url : '';
+        }
+
+        $uri = parse_url($url);
+        if (isset($uri['scheme'])) {
+            $server->setScheme($uri['scheme']);
+        }
+        if (isset($uri['host'])) {
+            $server->setHost($uri['host']);
+        }
+        if (isset($uri['port'])) {
+            $server->setPort($uri['port']);
+        }
+        if (isset($uri['user'])) {
+            $server->setUsername($uri['user']);
+        }
+        if (isset($uri['pass'])) {
+            $server->setPassword($uri['pass']);
+        }
+        if (isset($uri['path'])) {
+            $server->setPath($uri['path']);
+        }
+
+        if ($isJson) {
+            if (isset($jsonConfig->username)) {
+                $server->setUsername($jsonConfig->username);
+            }
+            if (isset($jsonConfig->password)) {
+                $server->setPassword($jsonConfig->password);
+            }
+        }
+
+        if ($username !== '') {
+            $server->setUsername($username);
+        }
+        if ($password !== '') {
+            $server->setPassword($password);
+        }
+    }
+
     protected function validate() {
         $errors = [];
-        if (empty($this->source)) {
+        if (!($this->source instanceof Server && $this->source->validate())) {
             $errors[] = 'You must specify a source IMAP server.';
         }
-        if (empty($this->target)) {
+        if (!($this->target instanceof Server && $this->target->validate())) {
             $errors[] = 'You must specify a target IMAP server.';
         }
         if (count($errors)) {
@@ -94,11 +181,11 @@ class Configuration {
         return $this->wipe;
     }
 
-    public function getSource(): string {
+    public function getSource(): Server {
         return $this->source;
     }
 
-    public function getTarget(): string {
+    public function getTarget(): Server {
         return $this->target;
     }
 

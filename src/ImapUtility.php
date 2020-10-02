@@ -3,61 +3,23 @@ class ImapUtility {
     protected bool $verbose = false;
     protected bool $test = false;
     protected $connection = null;
-    protected string $host = '';
-    protected string $username = '';
-    protected string $password = '';
-    protected string $path = '';
+    protected Server $server;
     protected stdClass $stats;
     protected array $mailFlags = ['Unseen', 'Flagged', 'Answered', 'Deleted', 'Draft'];
 
-    public function __construct(string $url, bool $isVerbose = false, bool $isTest = false) {
+    public function __construct(Server $server, bool $isVerbose = false, bool $isTest = false) {
+        $this->server = $server;
         $this->verbose = $isVerbose;
         $this->test = $isTest;
-
-        $this->parseConfigUrl($url);
         $this->connect();
-    }
-
-    protected function parseConfigUrl(string $url) {
-        $uri = parse_url($url);
-        $this->username = $uri['user'];
-        $this->password = $uri['pass'];
-
-        $this->host = '{' . $uri['host'];
-        if (!empty($uri['port'])) {
-            $this->host .= ':' . $uri['port'];
-        }
-        if (!empty($uri['scheme'])) {
-            switch (strtolower($uri['scheme'])) {
-                case 'imap-ssl':
-                    $this->host .= '/ssl';
-                    break;
-                case 'imap-ssl-novalidate':
-                    $this->host .= '/ssl/novalidate-cert';
-                    break;
-                case 'imap-tls':
-                    $this->host .= '/tls';
-                    break;
-                default:
-            }
-        }
-        $this->host .= '}';
-
-        if (empty($uri['path']) or $uri['path'] === '/') {
-            $uri['path'] = '/INBOX';
-        }
-        $trim = ltrim($uri['path'],'/');
-        if (!empty($trim)) {
-            $this->path = $trim;
-        }
     }
 
     protected function connect() {
         if ($this->verbose) {
-            echo 'Connect to: ' . $this->host . PHP_EOL;
+            echo 'Connect to: ' . $this->server->getImapServerPart() . PHP_EOL;
         }
 
-        $this->connection = imap_open($this->host, $this->username, $this->password);
+        $this->connection = imap_open($this->server->getImapServerPart(), $this->server->getUsername(), $this->server->getPassword());
         $this->checkAndThrowImapError('Could\'t connect to host:');
     }
 
@@ -74,12 +36,12 @@ class ImapUtility {
      * @param $pattern * == all folders, % == folders at current level
      */
     public function getFolders(string $pattern = '*'): array {
-        return imap_getmailboxes($this->connection, $this->host, $pattern);
+        return imap_getmailboxes($this->connection, $this->server->getImapServerPart(), $pattern);
     }
 
     public function changeFolder(string $path, bool $createFolder = false, string $key = ''): bool {
         if (substr($path, 0, 1) !== '{') {
-            $path = $this->host . trim($path, '/');
+            $path = $this->server->getImapServerPart() . trim($path, '/');
         }
 
         if ($this->verbose) {
@@ -103,15 +65,16 @@ class ImapUtility {
         }
 
         $this->checkAndThrowImapError('Failed to Switch change path (' . $path . '):');
+        return false;
     }
 
     protected function createFolder(string $path) {
         if (substr($path, 0, 1) !== '{') {
-            $path = $this->host . trim($path, '/');
+            $path = $this->server->getImapServerPart() . trim($path, '/');
         }
 
         if ($this->verbose) {
-            echo 'Create folder: ' . $path . PHP_EOL;
+            echo 'Create folder: ' . $this->getNameFromPath($path) . PHP_EOL;
         }
         if ($this->test) {
             return;
@@ -131,7 +94,7 @@ class ImapUtility {
 
     protected function updateStats($path = null) {
         if (substr($path, 0, 1) !== '{') {
-            $path = $this->host . trim($path, '/');
+            $path = $this->server->getImapServerPart() . trim($path, '/');
         }
 
         $this->stats = new \stdClass();
@@ -159,6 +122,9 @@ class ImapUtility {
         $mailHeader = imap_headerinfo($this->connection, $i);
         foreach ($this->mailFlags as $flag) {
             $mailHeader->$flag = trim($mailHeader->$flag);
+        }
+        if (!isset($mailHeader->subject)) {
+            $mailHeader->subject = '';
         }
         return $mailHeader;
     }
