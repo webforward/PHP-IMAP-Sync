@@ -32,6 +32,8 @@ class Configuration {
             } else if (in_array($argv[$i], ['--dry-run', '--test', '-t'])) {
                 $this->test = true;
             } else if (in_array($argv[$i], ['--listFolder'])) {
+                $this->verbose = true;
+                $this->test = true;
                 $this->listFolder = true;
             } else if (in_array($argv[$i], ['--wipe', '-w'])) {
                 $this->wipe = true;
@@ -89,8 +91,6 @@ class Configuration {
                     exit(1);
                 }
                 $this->mapFolder = $data;
-                $this->verbose = true;
-                $this->test = true;
             } else if (in_array($argv[$i], ['--memory', '-m'])) {
                 $i++;
                 if (empty($argv[$i])) {
