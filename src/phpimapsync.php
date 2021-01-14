@@ -1,4 +1,5 @@
 <?php
+require_once('Entity/Message.php');
 require_once('Server.php');
 require_once('Configuration.php');
 require_once('ImapUtility.php');
@@ -80,6 +81,16 @@ class ImapSync {
         }
     }
 
+    public function isMessageIdentical(\App\Entity\Message $sourceMessage, array $targetMessages): bool {
+        /** @var \App\Entity\Message $targetMessage */
+        foreach ($targetMessages as $targetMessage) {
+            if (!empty($targetMessage->getMessageId()) && $targetMessage->getMessageId() === $sourceMessage->getMessageId()) {
+                return ($sourceMessage === $targetMessage);
+            }
+        }
+        return false;
+    }
+
     public function sync() {
         $summary = new \stdClass();
         $summary->Copied = 0;
@@ -133,54 +144,57 @@ class ImapSync {
                 $sourceMessages = $this->imapSource->getMessages('Indexing source messages:');
                 $targetMessages = $this->imapTarget->getMessages('Indexing target messages:');
                 if ($this->config->isWipe()) {
-                    $summary->Removed += $this->imapTarget->removeMessagesAll();
+                    $summary->Removed += $this->imapTarget->removeMessagesAll($targetMessages);
                 } else {
-                    $summary->Removed += $this->imapTarget->removeMessagesNotFound($sourceMessages);
+                    $summary->Removed += $this->imapTarget->removeMessagesNotFound($sourceMessages, $targetMessages);
                 }
 
                 if ($this->config->isVerbose()) {
                     echo 'Synchronize messages:' . PHP_EOL;
                 }
-                for ($messageNumber = 1; $messageNumber <= $this->imapSource->getStats()->count; $messageNumber++) {
-                    $textNumber = str_pad($messageNumber, strlen($this->imapSource->getStats()->count), ' ', STR_PAD_LEFT);
+                /** @var \App\Entity\Message $sourceMessage */
+                foreach ($sourceMessages as $sourceMessage) {
+                    $textNumber = str_pad($sourceMessage->getMessageNumber(), strlen($this->imapSource->getStats()->count), ' ', STR_PAD_LEFT);
                     $updated = false;
-                    $mailHeader = $this->imapSource->getHeader($messageNumber);
 
-                    if (empty($mailHeader->subject)) {
-                        $mailHeader->subject = "*** No Subject ***";
+                    if (empty($sourceMessage->getSubject())) {
+                        $sourceMessage->setSubject('*** No Subject ***');
                     }
 
-                    if (isset($mailHeader->message_id)) {
-                        $existsTargetMail = array_key_exists($mailHeader->message_id, $targetMessages);
-                        $textSubject = $this->imapSource->decodeSubject($mailHeader->subject);
+                    $existsTargetMail = (!empty($sourceMessage->getMessageId()) ? array_key_exists($sourceMessage->getMessageId(), $targetMessages) : false);
+                    $textSubject = $this->imapSource->decodeSubject($sourceMessage->getSubject());
 
-                        if ($existsTargetMail && $targetMessages[$mailHeader->message_id] === $sourceMessages[$mailHeader->message_id]) {
-                            // Message already exists and has not changed
+                    $isMessageIdentical = false;
+                    if (!empty($sourceMessage->getMessageId())) {
+                        $isMessageIdentical = $this->isMessageIdentical($sourceMessage, $targetMessages);
+                    }
+
+                    if ($existsTargetMail && $isMessageIdentical) {
+                        // Message already exists and has not changed
+                        if ($this->config->isVerbose()) {
+                            echo '-> ' . $textNumber . ': [Exists] ' . $textSubject . PHP_EOL;
+                        }
+                        $summary->Exists++;
+                    } else {
+                        if ($existsTargetMail && !$isMessageIdentical) {
+                            $this->imapTarget->removeMessages([$sourceMessage->getMessageNumber()]);
+                            $updated = true;
+                        }
+
+                        $mailOptions = $sourceMessage->getMailOptions();
+                        $date = strftime('%d-%b-%Y %H:%M:%S +0000', strtotime($sourceMessage->getMailDate()));
+                        $result = $this->imapTarget->putMessage($this->imapSource->getMessage($sourceMessage->getMessageNumber()), $mailOptions, $date);
+                        $textOptions = str_replace('\\', '', $mailOptions);
+                        if ($result) {
                             if ($this->config->isVerbose()) {
-                                echo '-> ' . $textNumber . ': [Exists] ' . $textSubject . PHP_EOL;
+                                echo '-> ' . $textNumber . ': [' . ($updated ? 'Update' : 'Copied') . '] ' . $textSubject . ' (' . $textOptions . ')' . PHP_EOL;
                             }
-                            $summary->Exists++;
+                            $updated ? $summary->Updated++ : $summary->Copied++;
                         } else {
-                            if ($existsTargetMail && $targetMessages[$mailHeader->message_id] !== $sourceMessages[$mailHeader->message_id]) {
-                                $this->imapTarget->removeMessages([$messageNumber]);
-                                $updated = true;
+                            if ($this->config->isVerbose()) {
+                                echo '-> ' . $textNumber . ': [Error] ' . $textSubject . '(' . $textOptions . ')' . PHP_EOL;
                             }
-
-                            $mailOptions = $this->imapTarget->getMailOptionsFromMailHeader($mailHeader);
-                            $date = strftime('%d-%b-%Y %H:%M:%S +0000', strtotime($mailHeader->MailDate));
-                            $result = $this->imapTarget->putMessage($this->imapSource->getMessage($messageNumber), $mailOptions, $date);
-                            $textOptions = str_replace('\\', '', $mailOptions);
-                            if ($result) {
-                                if ($this->config->isVerbose()) {
-                                    echo '-> ' . $textNumber . ': [' . ($updated ? 'Update' : 'Copied') . '] ' . $textSubject . ' (' . $textOptions . ')' . PHP_EOL;
-                                }
-                                $updated ? $summary->Updated++ : $summary->Copied++;
-                            } else {
-                                if ($this->config->isVerbose()) {
-                                    echo '-> ' . $textNumber . ': [Error] ' . $textSubject . '(' . $textOptions . ')' . PHP_EOL;
-                                }
-                                $summary->Error++;
-                            }
+                            $summary->Error++;
                         }
                     }
                 }
@@ -192,7 +206,7 @@ class ImapSync {
                 echo '-> ' . $key . ': ' . $value . PHP_EOL;
             }
         }
-   }
+    }
 }
 
 $imapSync = new ImapSync();

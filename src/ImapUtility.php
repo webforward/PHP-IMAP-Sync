@@ -5,7 +5,6 @@ class ImapUtility {
     protected $connection = null;
     protected Server $server;
     protected stdClass $stats;
-    protected array $mailFlags = ['Unseen', 'Flagged', 'Answered', 'Deleted', 'Draft'];
 
     public function __construct(Server $server, bool $isVerbose = false, bool $isTest = false) {
         $this->server = $server;
@@ -118,17 +117,6 @@ class ImapUtility {
         return $return;
     }
 
-    public function getHeader($i): stdClass {
-        $mailHeader = imap_headerinfo($this->connection, $i);
-        foreach ($this->mailFlags as $flag) {
-            $mailHeader->$flag = trim($mailHeader->$flag);
-        }
-        if (!isset($mailHeader->subject)) {
-            $mailHeader->subject = '';
-        }
-        return $mailHeader;
-    }
-
     public function removeMessages(array $messageNumbers) {
         if ($this->test) {
             return;
@@ -208,24 +196,32 @@ class ImapUtility {
         return $name;
     }
 
-    public function getMessages(string $message = 'Indexing messages:'): array {
+    public function getMessages(string $outputText = 'Indexing messages:'): array {
         if ($this->verbose) {
-            echo $message . PHP_EOL;
+            echo $outputText . PHP_EOL;
         }
 
         $messages = [];
         $length = strlen($this->getStats()->count);
         for ($messageNumber = 1; $messageNumber <= $this->getStats()->count; $messageNumber++) {
-            $mailHeader = $this->getHeader($messageNumber);
-            $messages[$mailHeader->message_id] = md5(serialize([
-                'Unseen' => $mailHeader->Unseen,
-                'Flagged' => $mailHeader->Flagged,
-                'Answered' => $mailHeader->Answered,
-                'Deleted' => $mailHeader->Deleted,
-                'Draft' => $mailHeader->Draft,
-            ]));
+            $mailHeader = imap_headerinfo($this->connection, $messageNumber);
+
+            $message = new \App\Entity\Message();
+            $message->setMessageNumber($messageNumber)
+                ->setMessageId(isset($mailHeader->message_id) ? $mailHeader->message_id : '')
+                ->setSubject(isset($mailHeader->subject) ? $mailHeader->subject : '')
+                ->setMailDate($mailHeader->MailDate)
+                ->setFlagUnseen(trim($mailHeader->Unseen))
+                ->setFlagFlagged(trim($mailHeader->Flagged))
+                ->setFlagAnswered(trim($mailHeader->Answered))
+                ->setFlagDeleted(trim($mailHeader->Deleted))
+                ->setFlagDraft(trim($mailHeader->Draft))
+                ->updateHash();
+
+            $messages[$messageNumber] = $message;
+
             if ($this->verbose) {
-                echo '-> ' . str_pad($messageNumber, $length, ' ', STR_PAD_LEFT) . ': ' . $this->decodeSubject($mailHeader->subject) . PHP_EOL;
+                echo '-> ' . str_pad($messageNumber, $length, ' ', STR_PAD_LEFT) . ': ' . $this->decodeSubject($message->getSubject()) . PHP_EOL;
             }
         }
         if ($this->verbose) {
@@ -234,19 +230,27 @@ class ImapUtility {
         return $messages;
     }
 
-    public function removeMessagesNotFound(array $sourceMessages): int {
+    public function removeMessagesNotFound(array $sourceMessages, array $targetMessages): int {
         if ($this->verbose) {
             echo 'Remove messages on target server, which not exists on source server:' . PHP_EOL;
         }
 
+        $mapHash = [];
+        /** @var \App\Entity\Message $sourceMessage */
+        foreach ($sourceMessages as $sourceMessage) {
+            if (!empty($sourceMessage->getMessageId())) {
+                $mapHash[$sourceMessage->getMessageId()] = $sourceMessage->getMessageNumber();
+            }
+        }
+
         $removeMessages = [];
         $length = strlen($this->getStats()->count);
-        for ($messageNumber = 1; $messageNumber <= $this->getStats()->count; $messageNumber++) {
-            $mailHeader = $this->getHeader($messageNumber);
-            if (isset($mailHeader->message_id) && !array_key_exists($mailHeader->message_id, $sourceMessages)) {
-                $removeMessages[] = $messageNumber;
+        /** @var \App\Entity\Message $targetMessage */
+        foreach ($targetMessages as $targetMessage) {
+            if (!empty($targetMessage->getMessageId()) && !array_key_exists($targetMessage->getMessageId(), $mapHash)) {
+                $removeMessages[] = $targetMessage->getMessageNumber();
                 if ($this->verbose) {
-                    echo '-> ' . str_pad($messageNumber, $length, ' ', STR_PAD_LEFT) . ': ' . $this->decodeSubject($mailHeader->subject) . PHP_EOL;
+                    echo '-> ' . str_pad($targetMessage->getMessageNumber(), $length, ' ', STR_PAD_LEFT) . ': ' . $this->decodeSubject($targetMessage->getSubject()) . PHP_EOL;
                 }
             }
         }
@@ -260,18 +264,18 @@ class ImapUtility {
         return count($removeMessages);
     }
 
-    public function removeMessagesAll(): int {
+    public function removeMessagesAll(array $messages): int {
         if ($this->verbose) {
             echo 'Remove all messages on target server:' . PHP_EOL;
         }
 
         $removeMessages = [];
         $length = strlen($this->getStats()->count);
-        for ($messageNumber = 1; $messageNumber <= $this->getStats()->count; $messageNumber++) {
-            $mailHeader = $this->getHeader($messageNumber);
-            $removeMessages[] = $messageNumber;
+        /** @var \App\Entity\Message $message */
+        foreach ($messages as $message) {
+            $removeMessages[] = $message->getMessageNumber();
             if ($this->verbose) {
-                echo '-> ' . str_pad($messageNumber, $length, ' ', STR_PAD_LEFT) . ': ' . $this->decodeSubject($mailHeader->subject) . PHP_EOL;
+                echo '-> ' . str_pad($message->getMessageNumber(), $length, ' ', STR_PAD_LEFT) . ': ' . $this->decodeSubject($message->getSubject()) . PHP_EOL;
             }
         }
         if (!$this->test) {
@@ -282,18 +286,6 @@ class ImapUtility {
             echo (count($removeMessages) > 0 ? '' : '-> No messages removed' . PHP_EOL) . PHP_EOL;
         }
         return count($removeMessages);
-    }
-
-    public function getMailOptionsFromMailHeader(\stdClass $mailHeader): string {
-        $mailOptions = [];
-        foreach ($this->mailFlags as $flag) {
-            if ($flag === 'Unseen' && empty($mailHeader->$flag)) {
-                $mailOptions[] = '\\Seen';
-            } else if ($flag !== 'Unseen' && !empty($mailHeader->$flag)) {
-                $mailOptions[] = '\\' . $flag;
-            }
-        }
-        return implode(' ', $mailOptions);
     }
 
     public function decodeSubject(string $value): string {
